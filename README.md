@@ -35,7 +35,7 @@ Recent updates detect previously invisible costs:
 
 - **Zombie MCP processes**: Old claude sessions leave 300+ orphaned processes consuming 30+ GB RAM
 - **alwaysThinkingEnabled**: Adds 30-50% latency to every response
-- **Meta-learner spawn hooks**: PostToolUse hooks that fire 4 `claude -p` processes per trigger
+- **PostToolUse hooks spawning sub-processes**: Invisible process and context cost per trigger
 - **MCP connection churn**: Reconnection loops causing I/O bloat and CPU spikes
 - **effortLevel overuse**: Using "high" for all tasks wastes 40% tokens
 
@@ -90,7 +90,7 @@ Additional optimization case (2026-04):
 - 300+ zombie MCP processes → 0 (killed orphaned processes)
 - Node process memory: 14.8 GB → 4.6 GB (**69% reduction**)
 - `alwaysThinkingEnabled` disabled → 30-50% faster response
-- Meta-learner spawn hook removed → 4 fewer `claude -p` processes per Skill call
+- PostToolUse sub-process spawn hook removed → fewer invisible processes per Skill call
 - Unused MCP servers removed → fewer processes, less context bloat
 
 ## Companion: ccusage (forked with 14x speedup)
