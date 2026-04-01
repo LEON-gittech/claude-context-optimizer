@@ -1,0 +1,11 @@
+{
+  "name": "context-optimizer",
+  "version": "1.0.0",
+  "description": "Audit and optimize Claude Code context window usage — plugins, hooks, CLAUDE.md, MCP servers, env settings. Produces a scored report with actionable fixes.",
+  "skills": [
+    {
+      "name": "context-optimizer",
+      "path": "skills/context-optimizer/SKILL.md"
+    }
+  ]
+}
