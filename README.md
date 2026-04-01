@@ -13,7 +13,7 @@
 
 A Claude Code plugin that audits and optimizes your context window usage — plugins, hooks, CLAUDE.md, MCP servers, and environment settings.
 
-Born from real-world optimization that achieved **50% token reduction** on a heavy agentic workflow (ralph-gan with 15 plugins, 30+ hooks, 4-layer CLAUDE.md cascade).
+Born from real-world optimization that achieved **50% token reduction** on a heavy agentic workflow (15 plugins, 30+ hooks, 4-layer CLAUDE.md cascade).
 
 ## What It Does
 
@@ -74,7 +74,7 @@ Tested on a project with:
 - 30+ hooks per event cycle → reduced to 18
 - 8,425 token CLAUDE.md cascade → 4,570 tokens
 - Startup overhead: ~35-50K → ~20-25K tokens (**50% reduction**)
-- Per ralph-gan iteration: **500K-1M tokens saved**
+- Per agentic iteration: **500K-1M tokens saved**
 
 ## Companion: ccusage (forked with 14x speedup)
 
