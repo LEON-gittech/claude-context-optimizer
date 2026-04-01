@@ -1,5 +1,16 @@
 # context-optimizer
 
+<p align="center">
+  <img src="icon.png" alt="Context Optimizer" width="300">
+</p>
+
+<p align="center">
+  <strong>Audit and optimize Claude Code context window usage</strong><br>
+  Plugins, hooks, CLAUDE.md, MCP servers, env settings — scored report with auto-fix.
+</p>
+
+---
+
 A Claude Code plugin that audits and optimizes your context window usage — plugins, hooks, CLAUDE.md, MCP servers, and environment settings.
 
 Born from real-world optimization that achieved **50% token reduction** on a heavy agentic workflow (ralph-gan with 15 plugins, 30+ hooks, 4-layer CLAUDE.md cascade).
