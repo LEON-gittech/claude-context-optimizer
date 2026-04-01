@@ -137,6 +137,7 @@ iteration_overhead = tool_calls_per_iteration * tokens_per_call
 - PreToolUse enforcer + separate prompt-guard on Write|Edit → redundant
 - PostToolUse context-monitor + Stop context-guard → overlapping
 - Multiple SessionStart context injectors → likely redundant
+- PostToolUse hook spawning `claude -p` sub-processes → each trigger creates new processes with independent context windows. Unless explicitly needed, remove.
 
 ### Phase 4: Audit CLAUDE.md
 
@@ -192,6 +193,14 @@ env | grep -i "CLAUDE\|ANTHROPIC" | sort
 - `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` — if using external memory system
 
 **MCP overhead**: Each enabled MCP server adds tool definitions to system prompt. Disable unused servers with `disabledMcpServers` in project `.claude/settings.json`.
+
+**MCP connection churn**: MCP servers can drop and reconnect in loops, causing I/O bloat and CPU spikes. Check:
+```bash
+# Large debug files indicate connection errors
+find ~/.claude/debug/ -size +500k -ls
+grep -l "Connection error\|token expired" ~/.claude/debug/*.txt 2>/dev/null
+```
+If found, disable the unstable MCP server in settings.json.
 
 ### Phase 6: Check for .claudeignore
 
@@ -270,6 +279,55 @@ Present each fix and wait for user confirmation before applying:
 | No .claudeignore | Claude reads irrelevant files | Create with standard exclusions |
 | All subagents use Opus | 5x cost vs Sonnet for simple tasks | Set CLAUDE_CODE_SUBAGENT_MODEL=haiku for simple work |
 | Hooks from disabled plugins still running | Ghost hooks waste resources | Verify plugin disable removes hooks |
+| `alwaysThinkingEnabled: true` | Adds 30-50% latency to every response | Set to `false`, use `/think` manually |
+| `effortLevel: "high"` for all tasks | Wastes tokens on simple queries | Use `"medium"` for daily work |
+| Zombie MCP processes (stale sessions) | 300+ processes, 30+ GB RAM, CPU contention | Kill old claude sessions, `pkill -f` stale MCPs |
+| PostToolUse hooks spawning `claude -p` sub-processes | Invisible process and context cost | Remove or gate behind explicit command |
+| MCP server connection churn | Reconnection loops → I/O bloat, CPU spikes | Disable unstable servers, check debug logs |
+| Unused `mcpServers` in settings.json | Spawns extra processes on every session | Remove entries not actively used |
+
+## Zombie Process Detection
+
+A common hidden cost: old Claude sessions leave behind orphaned MCP server processes that accumulate over days/weeks.
+
+```bash
+# Check for zombie MCP processes
+ps aux | grep -c '[p]laywright-mcp'
+ps aux | grep -c '[c]ontext7-mcp'
+ps aux | grep -c '[s]equential-thinking'
+ps aux | grep -c '[t]avily-mcp'
+
+# Check for old claude sessions (running > 1 hour)
+ps aux | grep '[c]laude' | awk '{if ($9 ~ /^[0-9]+$/ || $10 > "01:00") print $2, $9, $10, $11}'
+
+# Total memory used by MCP servers
+ps aux | grep -E '(playwright-mcp|context7-mcp|sequential-thinking|tavily-mcp)' | grep -v grep | awk '{sum += $6} END {printf "%.0f MB\n", sum/1024}'
+```
+
+**Expected**: 0-2 of each MCP type. **Problem**: 10+ of any type indicates process leak.
+
+**Fix**:
+```bash
+# Kill old claude parent process (find with ps aux | grep claude)
+kill <old-claude-pid>
+
+# Or clean up orphaned MCPs directly
+pkill -f 'playwright-mcp'
+pkill -f 'context7-mcp'
+pkill -f 'mcp-server-sequential-thinking'
+pkill -f 'tavily-mcp'
+```
+
+## Key Env Optimizations (New)
+
+| Env / Setting | Default | Optimized | Impact |
+|--------------|---------|-----------|--------|
+| `alwaysThinkingEnabled` | true (some configs) | false | -30-50% latency |
+| `effortLevel` | high | medium | -40% tokens on simple tasks |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 80 | 50 | Earlier compaction |
+| `MAX_THINKING_TOKENS` | unlimited | 10000 | Cap thinking cost |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | sonnet | haiku (simple tasks) | 5x cheaper subagents |
+| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | 0 | 1 (if using external) | No duplicate memory |
 
 ## Companion Tool: ccusage
 
@@ -287,6 +345,8 @@ diff /tmp/before-optimization.txt /tmp/after-optimization.txt
 ## Quick Wins Checklist
 
 - [ ] Run `ccusage --period day` to establish cost baseline
+- [ ] Check for zombie MCP processes (ps aux | grep mcp)
+- [ ] Kill old claude sessions spawning orphaned processes
 - [ ] Disable plugins for wrong tech stack
 - [ ] Remove duplicate Stop hooks
 - [ ] Narrow `*` matchers to specific tools where possible
@@ -296,3 +356,8 @@ diff /tmp/before-optimization.txt /tmp/after-optimization.txt
 - [ ] Set CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50
 - [ ] Disable unused MCP servers
 - [ ] Review PostToolUse hooks with >10s timeout
+- [ ] Remove PostToolUse hooks that spawn `claude -p` sub-processes
+- [ ] Set `alwaysThinkingEnabled: false` if currently true
+- [ ] Set `effortLevel: "medium"` for daily work
+- [ ] Remove unused `mcpServers` entries from settings.json
+- [ ] Check `~/.claude/debug/` for large files (>500KB) indicating MCP connection churn

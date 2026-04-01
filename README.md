@@ -21,13 +21,23 @@ Runs a 9-phase audit:
 
 1. **Cost Analysis** — Historical token spending via [ccusage](https://github.com/LEON-gittech/ccusage)
 2. **Measure** — Count enabled plugins, hooks, CLAUDE.md tokens, MCP servers
-2. **Audit Plugins** — Score each plugin by overhead (hooks, matchers, tech stack relevance)
-3. **Audit Hooks** — Inventory all hooks across sources, detect duplicates and conflicts
-4. **Audit CLAUDE.md** — Check cascade for duplication, bloat, wrong tech stack
-5. **Audit MCP & Env** — Find unused servers, suggest env optimizations
-6. **Check .claudeignore** — Verify exclusion of irrelevant files
-7. **Generate Report** — Scored report with before/after estimates
-8. **Apply Fixes** — Direct edits with user approval
+3. **Audit Plugins** — Score each plugin by overhead (hooks, matchers, tech stack relevance)
+4. **Audit Hooks** — Inventory all hooks across sources, detect duplicates and conflicts
+5. **Audit CLAUDE.md** — Check cascade for duplication, bloat, wrong tech stack
+6. **Audit MCP & Env** — Find unused servers, suggest env optimizations, detect connection churn
+7. **Check .claudeignore** — Verify exclusion of irrelevant files
+8. **Generate Report** — Scored report with before/after estimates
+9. **Apply Fixes** — Direct edits with user approval
+
+## New: Hidden Cost Detection (v2)
+
+Recent updates detect previously invisible costs:
+
+- **Zombie MCP processes**: Old claude sessions leave 300+ orphaned processes consuming 30+ GB RAM
+- **alwaysThinkingEnabled**: Adds 30-50% latency to every response
+- **Meta-learner spawn hooks**: PostToolUse hooks that fire 4 `claude -p` processes per trigger
+- **MCP connection churn**: Reconnection loops causing I/O bloat and CPU spikes
+- **effortLevel overuse**: Using "high" for all tasks wastes 40% tokens
 
 ## Why This One
 
@@ -75,6 +85,13 @@ Tested on a project with:
 - 8,425 token CLAUDE.md cascade → 4,570 tokens
 - Startup overhead: ~35-50K → ~20-25K tokens (**50% reduction**)
 - Per agentic iteration: **500K-1M tokens saved**
+
+Additional optimization case (2026-04):
+- 300+ zombie MCP processes → 0 (killed orphaned processes)
+- Node process memory: 14.8 GB → 4.6 GB (**69% reduction**)
+- `alwaysThinkingEnabled` disabled → 30-50% faster response
+- Meta-learner spawn hook removed → 4 fewer `claude -p` processes per Skill call
+- Unused MCP servers removed → fewer processes, less context bloat
 
 ## Companion: ccusage (forked with 14x speedup)
 
