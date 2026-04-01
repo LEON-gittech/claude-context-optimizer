@@ -6,9 +6,10 @@ Born from real-world optimization that achieved **50% token reduction** on a hea
 
 ## What It Does
 
-Runs an 8-phase audit:
+Runs a 9-phase audit:
 
-1. **Measure** — Count enabled plugins, hooks, CLAUDE.md tokens, MCP servers
+1. **Cost Analysis** — Historical token spending via [ccusage](https://github.com/LEON-gittech/ccusage)
+2. **Measure** — Count enabled plugins, hooks, CLAUDE.md tokens, MCP servers
 2. **Audit Plugins** — Score each plugin by overhead (hooks, matchers, tech stack relevance)
 3. **Audit Hooks** — Inventory all hooks across sources, detect duplicates and conflicts
 4. **Audit CLAUDE.md** — Check cascade for duplication, bloat, wrong tech stack
@@ -63,6 +64,18 @@ Tested on a project with:
 - 8,425 token CLAUDE.md cascade → 4,570 tokens
 - Startup overhead: ~35-50K → ~20-25K tokens (**50% reduction**)
 - Per ralph-gan iteration: **500K-1M tokens saved**
+
+## Companion: ccusage (forked with 14x speedup)
+
+Use [ccusage](https://github.com/LEON-gittech/ccusage) to measure actual token spending before and after optimization:
+
+```bash
+npm install -g ccusage
+ccusage --period day    # daily cost breakdown by model
+ccusage --period week   # weekly trend
+```
+
+Our fork adds per-file caching for 14x faster analysis on large datasets.
 
 ## License
 

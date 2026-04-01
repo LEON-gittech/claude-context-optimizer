@@ -29,6 +29,30 @@ A fresh Claude Code session in an empty directory uses ~16K tokens. A real proje
 
 ## Workflow
 
+### Phase 0: Historical Cost Analysis with ccusage
+
+Before auditing, measure actual token spending using [ccusage](https://github.com/LEON-gittech/ccusage) (forked with 14x cache speedup):
+
+```bash
+# Install (one-time)
+npm install -g ccusage   # or use our fork: gh repo clone LEON-gittech/ccusage
+
+# Daily cost breakdown by model
+ccusage --period day
+
+# Weekly trend
+ccusage --period week
+
+# Identify which days/models consume most tokens
+# Look for: cache_write >> cache_read (indicates poor cache reuse from too many subagents)
+# Look for: high total tokens on days with agentic workflows (ralph, autopilot)
+```
+
+**Key metrics to capture:**
+- Daily total tokens and cost
+- Cache write vs cache read ratio (target: read > 5x write = good cache reuse)
+- Model distribution (Opus vs Sonnet vs Haiku — is Opus overused?)
+
 ### Phase 1: Measure Current State
 
 Run these commands to establish baseline:
@@ -247,8 +271,22 @@ Present each fix and wait for user confirmation before applying:
 | All subagents use Opus | 5x cost vs Sonnet for simple tasks | Set CLAUDE_CODE_SUBAGENT_MODEL=haiku for simple work |
 | Hooks from disabled plugins still running | Ghost hooks waste resources | Verify plugin disable removes hooks |
 
+## Companion Tool: ccusage
+
+Use [ccusage](https://github.com/LEON-gittech/ccusage) to measure actual token spending before and after optimization. Our fork includes a 14x cache speedup for large datasets.
+
+```bash
+# Before optimization — capture baseline
+ccusage --period day > /tmp/before-optimization.txt
+
+# After optimization — compare
+ccusage --period day > /tmp/after-optimization.txt
+diff /tmp/before-optimization.txt /tmp/after-optimization.txt
+```
+
 ## Quick Wins Checklist
 
+- [ ] Run `ccusage --period day` to establish cost baseline
 - [ ] Disable plugins for wrong tech stack
 - [ ] Remove duplicate Stop hooks
 - [ ] Narrow `*` matchers to specific tools where possible
