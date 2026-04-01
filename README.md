@@ -36,8 +36,8 @@ Runs a 9-phase audit:
 ## Install
 
 ```bash
-/plugin marketplace add <your-username>/claude-context-optimizer
-/plugin install context-optimizer
+/plugin marketplace add LEON-gittech/claude-context-optimizer
+/plugin install context-optimizer@LEON-gittech
 ```
 
 Or manually:
