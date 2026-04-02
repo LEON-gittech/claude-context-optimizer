@@ -282,13 +282,64 @@ Present each fix and wait for user confirmation before applying:
 | `alwaysThinkingEnabled: true` | Adds 30-50% latency to every response | Set to `false`, use `/think` manually |
 | `effortLevel: "high"` for all tasks | Wastes tokens on simple queries | Use `"medium"` for daily work |
 | Zombie MCP processes (stale sessions) | 300+ processes, 30+ GB RAM, CPU contention | Kill old claude sessions, `pkill -f` stale MCPs |
+| Zombie claude processes (>2 days old) | Each holds memory, MCP children, context state | `pgrep claude` + check age, kill old ones |
+| Subagent session accumulation | 100+ session records clutter resume list | Limit parallel Agent calls, consolidate analysis |
+| Stale persistent-mode state files | `active: true` in `.omc/state/` blocks session exit | Delete stale state files after workflow ends |
 | PostToolUse hooks spawning `claude -p` sub-processes | Invisible process and context cost | Remove or gate behind explicit command |
 | MCP server connection churn | Reconnection loops → I/O bloat, CPU spikes | Disable unstable servers, check debug logs |
 | Unused `mcpServers` in settings.json | Spawns extra processes on every session | Remove entries not actively used |
+| CWD deleted but process alive | Worktree removed, claude process lingers | Check `readlink /proc/$pid/cwd` for `(deleted)` |
 
 ## Zombie Process Detection
 
-A common hidden cost: old Claude sessions leave behind orphaned MCP server processes that accumulate over days/weeks.
+A common hidden cost: old Claude sessions leave behind orphaned processes that accumulate over days/weeks.
+
+### Zombie Claude Processes
+
+Long-running sessions (from agentic workflows, tmux, persistent-mode hooks) can become zombies when their CWD is deleted, the workflow stalls, or the user forgets about them.
+
+```bash
+# List all claude processes with age, PID, and working directory
+for pid in $(pgrep claude); do
+  ppid=$(ps -o ppid= -p $pid 2>/dev/null | tr -d ' ')
+  age=$(ps -o etime= -p $pid 2>/dev/null | tr -d ' ')
+  cwd=$(readlink /proc/$pid/cwd 2>/dev/null)
+  echo "PID=$pid AGE=$age CWD=$cwd"
+done
+
+# Quick check: any claude processes older than 1 day?
+for pid in $(pgrep claude); do
+  age=$(ps -o etimes= -p $pid 2>/dev/null | tr -d ' ')
+  if [ "$age" -gt 86400 ] 2>/dev/null; then
+    days=$((age / 86400))
+    cwd=$(readlink /proc/$pid/cwd 2>/dev/null)
+    echo "ZOMBIE: PID=$pid running ${days}d CWD=$cwd"
+  fi
+done
+```
+
+**Expected**: 1-3 claude processes (current session + maybe tmux). **Problem**: 5+ processes, or any running >2 days, or CWD showing `(deleted)`.
+
+**Red flags:**
+- `CWD` shows `(deleted)` — the worktree/branch was removed but the process lingers
+- Age >2 days — likely a forgotten agentic workflow or stale persistent-mode session
+- Multiple processes in the same directory — subagent that never terminated
+
+**Fix**:
+```bash
+# Kill specific zombie (verify PID first with the detection script above)
+kill <zombie-pid>
+
+# Kill all claude processes older than 2 days (DANGEROUS — verify first!)
+# for pid in $(pgrep claude); do
+#   age=$(ps -o etimes= -p $pid 2>/dev/null | tr -d ' ')
+#   [ "$age" -gt 172800 ] 2>/dev/null && echo "Would kill PID=$pid ($(readlink /proc/$pid/cwd 2>/dev/null))"
+# done
+```
+
+### Zombie MCP Processes
+
+Old Claude sessions also leave behind orphaned MCP server processes.
 
 ```bash
 # Check for zombie MCP processes
@@ -296,9 +347,6 @@ ps aux | grep -c '[p]laywright-mcp'
 ps aux | grep -c '[c]ontext7-mcp'
 ps aux | grep -c '[s]equential-thinking'
 ps aux | grep -c '[t]avily-mcp'
-
-# Check for old claude sessions (running > 1 hour)
-ps aux | grep '[c]laude' | awk '{if ($9 ~ /^[0-9]+$/ || $10 > "01:00") print $2, $9, $10, $11}'
 
 # Total memory used by MCP servers
 ps aux | grep -E '(playwright-mcp|context7-mcp|sequential-thinking|tavily-mcp)' | grep -v grep | awk '{sum += $6} END {printf "%.0f MB\n", sum/1024}'
@@ -308,7 +356,7 @@ ps aux | grep -E '(playwright-mcp|context7-mcp|sequential-thinking|tavily-mcp)' 
 
 **Fix**:
 ```bash
-# Kill old claude parent process (find with ps aux | grep claude)
+# Kill the parent claude process (preferred — MCPs die with it)
 kill <old-claude-pid>
 
 # Or clean up orphaned MCPs directly
@@ -316,6 +364,74 @@ pkill -f 'playwright-mcp'
 pkill -f 'context7-mcp'
 pkill -f 'mcp-server-sequential-thinking'
 pkill -f 'tavily-mcp'
+```
+
+## Subagent Session Accumulation
+
+When Claude Code uses the `Agent` tool to spawn subagents, each creates a session record in `~/.claude/projects/<project>/`. These pile up in the session resume list, making it hard to find real sessions.
+
+### Detection
+
+```bash
+# Count total session directories for current project
+PROJECT_DIR=$(echo "$PWD" | sed 's|/|-|g; s|^-||')
+SESSION_DIR="$HOME/.claude/projects/-${PROJECT_DIR}"
+echo "Total sessions: $(ls -d "$SESSION_DIR"/*/ 2>/dev/null | wc -l)"
+
+# Count sessions with subagent children
+SUBAGENT_PARENTS=0
+TOTAL_SUBAGENTS=0
+for dir in "$SESSION_DIR"/*/subagents/ 2>/dev/null; do
+  count=$(ls "$dir"/*.meta.json 2>/dev/null | wc -l)
+  if [ "$count" -gt 0 ]; then
+    SUBAGENT_PARENTS=$((SUBAGENT_PARENTS + 1))
+    TOTAL_SUBAGENTS=$((TOTAL_SUBAGENTS + count))
+  fi
+done
+echo "Sessions with subagents: $SUBAGENT_PARENTS (total subagents: $TOTAL_SUBAGENTS)"
+```
+
+**Expected**: <50 session dirs. **Problem**: 100+ sessions means heavy subagent usage is accumulating records.
+
+### Common Causes
+
+| Cause | Description | Solution |
+|-------|-------------|----------|
+| Agentic workflows (autopilot, ultrawork, ralph) | Each iteration may spawn multiple Agent calls | Use `model=haiku` for simple subagents, limit parallel agents |
+| Parallel analysis patterns | Spawning 3+ agents for security/performance/test analysis | Consolidate into a single comprehensive agent call |
+| persistent-mode Stop hook | Prevents sessions from terminating, extending their lifetime | Ensure stale-state threshold (default 2h) is working |
+| Background agents (`run_in_background: true`) | Agents run detached and may not be noticed | Check `pgrep claude` after workflows complete |
+
+### Persistent-Mode Hook Audit
+
+The `persistent-mode.mjs` Stop hook is the most common reason sessions won't terminate. Audit its state files:
+
+```bash
+# Check for active OMC mode states that may be keeping sessions alive
+STATE_DIR=".omc/state"
+for f in ralph-state.json autopilot-state.json ultrawork-state.json \
+         ultrapilot-state.json pipeline-state.json team-state.json \
+         ultraqa-state.json swarm-summary.json skill-active-state.json; do
+  if [ -f "$STATE_DIR/$f" ]; then
+    active=$(python3 -c "import json; d=json.load(open('$STATE_DIR/$f')); print(d.get('active', False))" 2>/dev/null)
+    echo "$f: active=$active"
+  fi
+done
+
+# Check session-scoped state files
+for dir in "$STATE_DIR"/sessions/*/; do
+  session=$(basename "$dir")
+  for f in "$dir"*.json; do
+    [ -f "$f" ] && echo "Session $session: $(basename $f)"
+  done
+done 2>/dev/null
+```
+
+**If stale state files have `active: true`**: Delete them to unblock session termination:
+```bash
+# Remove stale state files (only after confirming no active workflow)
+rm -f .omc/state/*-state.json
+rm -rf .omc/state/sessions/
 ```
 
 ## Key Env Optimizations (New)
@@ -345,8 +461,13 @@ diff /tmp/before-optimization.txt /tmp/after-optimization.txt
 ## Quick Wins Checklist
 
 - [ ] Run `ccusage --period day` to establish cost baseline
+- [ ] Check for zombie claude processes (`pgrep claude` + check age >2 days)
+- [ ] Kill zombie claude processes with deleted CWD or age >2 days
 - [ ] Check for zombie MCP processes (ps aux | grep mcp)
 - [ ] Kill old claude sessions spawning orphaned processes
+- [ ] Audit subagent session count (>100 in one project = problem)
+- [ ] Check `.omc/state/` for stale `active: true` state files
+- [ ] Clean stale persistent-mode state files after workflows end
 - [ ] Disable plugins for wrong tech stack
 - [ ] Remove duplicate Stop hooks
 - [ ] Narrow `*` matchers to specific tools where possible

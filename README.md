@@ -33,7 +33,11 @@ Runs a 9-phase audit:
 
 Recent updates detect previously invisible costs:
 
+- **Zombie claude processes**: Sessions from agentic workflows (ralph, autopilot, ultrawork) that run for days/weeks — one case found 5 zombies including a 115-day-old process
 - **Zombie MCP processes**: Old claude sessions leave 300+ orphaned processes consuming 30+ GB RAM
+- **Subagent session accumulation**: Agent tool spawns create session records that pile up (100+ sessions per project), cluttering the resume list
+- **Stale persistent-mode state files**: `.omc/state/*-state.json` with `active: true` blocks session termination even after workflows end
+- **Deleted CWD zombies**: Worktrees get removed but the claude process keeps running with `(deleted)` CWD
 - **alwaysThinkingEnabled**: Adds 30-50% latency to every response
 - **PostToolUse hooks spawning sub-processes**: Invisible process and context cost per trigger
 - **MCP connection churn**: Reconnection loops causing I/O bloat and CPU spikes
@@ -88,7 +92,10 @@ Tested on a project with:
 
 Additional optimization case (2026-04):
 - 300+ zombie MCP processes → 0 (killed orphaned processes)
+- 9 claude processes (5 zombies, oldest 115 days) → 3 healthy processes
 - Node process memory: 14.8 GB → 4.6 GB (**69% reduction**)
+- 100+ subagent session records cluttering resume list identified
+- Stale `.omc/state/` files with `active: true` blocking session exits → cleaned
 - `alwaysThinkingEnabled` disabled → 30-50% faster response
 - PostToolUse sub-process spawn hook removed → fewer invisible processes per Skill call
 - Unused MCP servers removed → fewer processes, less context bloat
