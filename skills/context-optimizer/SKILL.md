@@ -289,6 +289,7 @@ Present each fix and wait for user confirmation before applying:
 | MCP server connection churn | Reconnection loops → I/O bloat, CPU spikes | Disable unstable servers, check debug logs |
 | Unused `mcpServers` in settings.json | Spawns extra processes on every session | Remove entries not actively used |
 | CWD deleted but process alive | Worktree removed, claude process lingers | Check `readlink /proc/$pid/cwd` for `(deleted)` |
+| Ghost sessions from CronCreate spam | Thousands of junk sessions polluting devtools and wasting storage | Detect and purge ghost session JSONL files, kill source zombie process |
 
 ## Zombie Process Detection
 
@@ -365,6 +366,53 @@ pkill -f 'context7-mcp'
 pkill -f 'mcp-server-sequential-thinking'
 pkill -f 'tavily-mcp'
 ```
+
+## Ghost Session Detection (CronCreate Spam)
+
+Long-running Claude sessions (e.g., idle in tmux) may have `CronCreate` scheduled tasks that continue firing indefinitely, generating thousands of junk sessions every ~10 minutes. These sessions:
+- Pollute `~/.claude/projects/` with 6-20 line JSONL files
+- Show up in claude-devtools as fake sessions with canned analysis prompts
+- Waste storage and API credits if the prompts actually execute
+
+### Detection
+
+```bash
+# Count ghost sessions (first line is a canned analysis prompt)
+find ~/.claude/projects/ -name "*.jsonl" | while read f; do
+  head -1 "$f" | grep -q "Analyze this codebase for\|Analyze test coverage\|Analyze this codebase for performance" && echo "$f"
+done | wc -l
+
+# Check if new ones are still being created (run twice, 15min apart)
+find ~/.claude/projects/ -name "*.jsonl" -mmin -15 | while read f; do
+  head -1 "$f" | grep -q "Analyze this codebase for\|Analyze test coverage\|Analyze this codebase for performance" && echo "ACTIVE: $f"
+done
+```
+
+### Cleanup
+
+```bash
+# Build list and delete
+find ~/.claude/projects/ -name "*.jsonl" | while read f; do
+  head -1 "$f" | grep -q "Analyze this codebase for\|Analyze test coverage\|Analyze this codebase for performance" && echo "$f"
+done > /tmp/ghost_sessions.txt
+xargs rm -f < /tmp/ghost_sessions.txt
+echo "Deleted $(wc -l < /tmp/ghost_sessions.txt) ghost sessions"
+```
+
+### Known Ghost Session Patterns
+
+| First Line Pattern | Source | Frequency |
+|-------------------|--------|-----------|
+| `"Analyze this codebase for security vulnerabilities..."` | CronCreate in stale session | ~10min |
+| `"Analyze test coverage and identify gaps..."` | CronCreate in stale session | ~10min |
+| `"Analyze this codebase for performance optimizations..."` | CronCreate in stale session | ~10min |
+
+### Prevention
+
+- Always `/exit` Claude instances in tmux before detaching
+- Set `autoCompactThreshold` to limit runaway sessions
+- Periodically check for ghost sessions as part of `ccusage` workflow
+- Kill zombie Claude processes (see above) — ghost sessions stop when the source process dies
 
 ## Subagent Session Accumulation
 
