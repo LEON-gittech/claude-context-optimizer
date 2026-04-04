@@ -403,9 +403,32 @@ echo "Deleted $(wc -l < /tmp/ghost_sessions.txt) ghost sessions"
 
 | First Line Pattern | Source | Frequency |
 |-------------------|--------|-----------|
-| `"Analyze this codebase for security vulnerabilities..."` | CronCreate in stale session | ~10min |
-| `"Analyze test coverage and identify gaps..."` | CronCreate in stale session | ~10min |
-| `"Analyze this codebase for performance optimizations..."` | CronCreate in stale session | ~10min |
+| `"Analyze this codebase for security vulnerabilities..."` | `@claude-flow/cli daemon` | ~10min |
+| `"Analyze test coverage and identify gaps..."` | `@claude-flow/cli daemon` | ~10min |
+| `"Analyze this codebase for performance optimizations..."` | `@claude-flow/cli daemon` | ~10min |
+
+### Root Cause: `@claude-flow/cli daemon`
+
+The `claude-flow` package (`npx @claude-flow/cli daemon start`) runs a background daemon that periodically spawns `claude --print <analysis-prompt>` commands. These create new session JSONL files every ~10 minutes, rotating through 3 canned prompts (security, test coverage, performance).
+
+**Detection:**
+```bash
+# Find the daemon process
+pgrep -a -f "claude-flow.*daemon"
+
+# Check if running (may have been started months ago)
+ps -o pid,etime,args -p $(pgrep -f "claude-flow.*daemon") 2>/dev/null
+```
+
+**Fix:**
+```bash
+# Kill the daemon
+pkill -f "claude-flow.*daemon"
+
+# Prevent restart: uninstall or remove from startup
+npm uninstall -g @claude-flow/cli
+# Or remove any systemd/cron entry that starts it
+```
 
 ### Prevention
 
