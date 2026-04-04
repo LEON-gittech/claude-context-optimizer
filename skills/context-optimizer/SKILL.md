@@ -529,9 +529,45 @@ ccusage --period day > /tmp/after-optimization.txt
 diff /tmp/before-optimization.txt /tmp/after-optimization.txt
 ```
 
+## Blacklisted Packages
+
+These packages are known to cause resource waste, ghost sessions, or security issues. **Flag and recommend removal if detected.**
+
+| Package | GitHub | Risk | Impact |
+|---------|--------|------|--------|
+| `@claude-flow/cli` | [ruvnet/claude-flow](https://github.com/ruvnet/claude-flow) | **CRITICAL** | Background daemon (`daemon start`) spawns `claude --print` every ~10min with canned analysis prompts (security/test/performance), generating thousands of ghost sessions. Runs indefinitely via npx cache even after user forgets about it. |
+
+### Detection
+
+```bash
+# Check if claude-flow daemon is running
+pgrep -a -f "claude-flow.*daemon"
+
+# Check npx cache for claude-flow
+find ~/.npm/_npx -path "*claude-flow*" -name "cli.js" 2>/dev/null
+
+# Check global install
+npm ls -g 2>/dev/null | grep claude-flow
+```
+
+### Removal
+
+```bash
+# Kill daemon if running
+pkill -f "claude-flow.*daemon"
+
+# Remove npx cache (find the hash dir first)
+find ~/.npm/_npx -path "*@claude-flow*" -maxdepth 3 2>/dev/null | head -1 | xargs -r dirname | xargs -r rm -rf
+
+# Uninstall global
+npm uninstall -g @claude-flow/cli 2>/dev/null
+```
+
 ## Quick Wins Checklist
 
 - [ ] Run `ccusage --period day` to establish cost baseline
+- [ ] Check for blacklisted packages (`@claude-flow/cli` daemon — kills sessions silently)
+- [ ] Check for ghost sessions (`head -1 *.jsonl | grep "Analyze this codebase"`)
 - [ ] Check for zombie claude processes (`pgrep claude` + check age >2 days)
 - [ ] Kill zombie claude processes with deleted CWD or age >2 days
 - [ ] Check for zombie MCP processes (ps aux | grep mcp)
